@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Round — jouez un canon avec vous-même</title>
+<!--
+  Round — un looper à délai pour duos en solo
+  -----------------------------------
+  Pointez un micro vers un instrument acoustique (violon, voix, etc.),
+  et Round renvoie votre son en direct via une ou plusieurs lignes
+  de délai indépendantes, pour que vous puissiez jouer contre votre
+  propre passé — comme un canon est censé être interprété avec plusieurs voix.
+
+  Ceci est un fichier HTML unique et sans dépendance, basé sur l'API Web Audio.
+  Aucun audio n'est enregistré sur disque ou envoyé ailleurs ; tout se passe
+  en direct, dans la mémoire de votre onglet de navigateur.
+
+  Auteur : (ajoutez votre nom ici)
+  Licence : MIT — voir le bloc LICENSE au bas de ce fichier.
+  Dépôt : (ajoutez votre lien GitHub ici, ex: github.com/whitestone-LYNX/round)
+
+  COMMENT L'UTILISER
+  1. Portez un casque. Ce n'est pas optionnel — voir l'avertissement sur la page.
+  2. Cliquez sur "Activer le micro" et autorisez l'accès.
+  3. Dans le panneau Tempo, tapez le BPM du morceau et choisissez sa
+     signature rythmique (ou tapez le tempo avec le bouton tap-tempo
+     plutôt que de taper un nombre).
+  4. Réglez chaque voix en mesures, pas en secondes — ex: "2 mesures"
+     pour une entrée toutes les deux mesures. Round convertit cela en
+     un délai exact pour vous, donc pas besoin de deviner les secondes.
+  5. Jouez le morceau une fois seul. Quand la première voix commence
+     à vous faire écho, commencez à jouer la prochaine entrée contre elle,
+     exactement comme un second chanteur rejoignant un canon.
+
+  COMPATIBILITÉ NAVIGATEUR
+  Nécessite un navigateur avec Web Audio API et getUserMedia — tout Chrome,
+  Firefox, Edge ou Safari récent. Doit être servi via HTTPS, ou ouvert
+  depuis localhost (les navigateurs bloquent l'accès au micro sur http:// classique).
+-->
+
+<header>
+    <p class="eyebrow">un looper à délai pour canons en solo</p>
+    <h1>R<em>ound</em></h1>
+    <p class="tagline">
+      Jouez votre partie une fois. Round vous la renvoie, différée, afin que
+      la prochaine entrée ait quelqu'un contre qui jouer — vous-même,
+      il y a une phrase de cela.
+    </p>
+</header>
+
+<div class="warning" id="warning" role="note">
+    <svg><use href="#icon-headphones"/></svg>
+    <div>
+      <strong>Portez un casque avant d'activer ceci.</strong>
+      Round envoie votre jeu différé vers vos haut-parleurs en temps réel. Si un
+      haut-parleur renvoie le son dans un micro ouvert, le son boucle sur
+      lui-même et finit en sifflement. Le casque garde la boucle hors du micro.
+    </div>
+    <button id="warning-dismiss" aria-label="Ignorer l'avertissement">×</button>
+</div>
+
+<!-- ... Panneau transport ... -->
+    <div class="transport">
+      <button class="btn btn-primary" id="mic-toggle">
+        <svg><use href="#icon-mic"/></svg>
+        <span id="mic-toggle-label">Activer le micro</span>
+      </button>
+      <span class="status-text" id="status-text">Microphone désactivé</span>
+    </div>
+
+<!-- ... Panneau Tempo ... -->
+    <h2 class="panel-title">Tempo</h2>
+    <span class="panel-hint">réglez ceci une fois — chaque voix se cale sur des mesures entières</span>
+    <!-- ... -->
+      <p class="tempo-hint">
+        Chaque voix ci-dessous est réglée en mesures, pas en secondes — tapez le BPM et
+        la signature rythmique du morceau ici et le délai de chaque voix sera calculé pour vous.
+      </p>
+
+<!-- ... Panneau Voix ... -->
+    <h2 class="panel-title">Voix</h2>
+    <span class="panel-hint">chaque voix est un écho indépendant de vous</span>
+    <button class="btn" id="add-voice">
+        <svg><use href="#icon-plus"/></svg>
+        Ajouter une voix
+    </button>
+
+<!-- ... Panneau Master ... -->
+    <h2 class="panel-title">Master</h2>
+    <span class="panel-hint">contrôle tout ce que vous entendez en retour</span>
+    <button class="btn btn-danger" id="panic-btn">
+        <svg><use href="#icon-mute"/></svg>
+        Tout couper
+    </button>
+
+<!-- ... Pied de page ... -->
+  <footer>
+    Round est gratuit et open-source (sous licence MIT). Aucun audio n'est enregistré,
+    sauvegardé ou envoyé — tout s'exécute en direct dans cet onglet de navigateur.<br />
+    Les réglages de délai et de volume de vos voix sont mémorisés sur cet
+    appareil pour que vous n'ayez pas à les re-régler à chaque session.
+  </footer>
