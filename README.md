@@ -6,4 +6,4 @@ This project took time to make, please consider showing it to your friends and e
 
 Created on 07/15/26 | 11:42 PM EST UTC +2
 
-Translated into German, Russian, French, Chinese, Spanish and Japanese
+
