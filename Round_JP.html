@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Round — 自分自身とカノンを演奏する</title>
+<!--
+  Round — ソロ演奏用ディレイ・ルーパー
+  -----------------------------------
+  アコースティック楽器（バイオリン、声など）にマイクを向けます。
+  Roundは、あなたの演奏を1つ以上の独立したディレイラインを通してリアルタイムで再生します。
+  まるでカノン形式の楽曲のように、過去の自分と合奏することができます。
+
+  本ファイルは、Web Audio APIを使用した、依存関係のない単一のHTMLファイルです。
+  音声データがディスクに保存されたり、外部に送信されることはありません。
+  すべてブラウザのメモリ内でリアルタイムに処理されます。
+
+  作成者: (ここに名前を追加)
+  ライセンス: MIT — このファイル下部のLICENSEブロックを参照。
+  リポジトリ: (ここにGitHubリンクを追加、例: github.com/whitestone-LYNX/round)
+
+  使い方
+  1. ヘッドフォンを着用してください。（必須です。ページ内の警告を参照）
+  2. 「マイクを有効にする」をクリックし、アクセスを許可します。
+  3. Tempoパネルで楽曲のBPMを入力し、拍子を選択します
+     （または、数値入力の代わりにタップテンポボタンでリズムを刻んで設定します）。
+  4. 各ボイスのタイミングは秒単位ではなく小節単位で設定します（例：「2小節」で2小節ごとのエントリー）。
+     Roundが自動的に正確なディレイ時間に変換するため、秒数を推測する必要はありません。
+  5. 最初は一人で演奏します。最初の声が重なり始めたら、それに合わせて
+     次のエントリーを演奏します。まるで二重唱のようにカノンを組み立てていきます。
+
+  ブラウザのサポート
+  Web Audio APIおよびgetUserMediaに対応したブラウザが必要です（最近のChrome、Firefox、Edge、Safariなど）。
+  HTTPS経由で提供されるか、localhostから開く必要があります（通常のhttp://ではマイクへのアクセスがブロックされます）。
+-->
+
+<header>
+    <p class="eyebrow">ソロ演奏のためのディレイ・ルーパー</p>
+    <h1>R<em>ound</em></h1>
+    <p class="tagline">
+      演奏を一度録音し、Roundが遅延させて再生します。
+      次に入ってくる声が、過去の自分と合奏できるようにするためのツールです。
+    </p>
+</header>
+
+<div class="warning" id="warning" role="note">
+    <svg><use href="#icon-headphones"/></svg>
+    <div>
+      <strong>使用前にヘッドフォンを着用してください。</strong>
+      Roundは遅延させた演奏をリアルタイムでスピーカーに出力します。
+      スピーカーから出た音がマイクに入ると、音がループしてハウリング（ screech）の原因となります。
+      ヘッドフォンを使用することで、ループ音を完全に遮断できます。
+    </div>
+    <button id="warning-dismiss" aria-label="警告を閉じる">×</button>
+</div>
+
+<!-- ... トランスポートパネル ... -->
+    <div class="transport">
+      <button class="btn btn-primary" id="mic-toggle">
+        <svg><use href="#icon-mic"/></svg>
+        <span id="mic-toggle-label">マイクを有効にする</span>
+      </button>
+      <span class="status-text" id="status-text">マイクオフ</span>
+    </div>
+
+<!-- ... テンポパネル ... -->
+    <h2 class="panel-title">Tempo</h2>
+    <span class="panel-hint">一度設定すれば、すべての声が小節単位で同期します</span>
+    <!-- ... -->
+      <p class="tempo-hint">
+        各ボイスは小節単位で設定されます。ここに楽曲のBPMと拍子を入力すれば、
+        それぞれのディレイ時間が自動的に計算されます。
+      </p>
+
+<!-- ... ボイスパネル ... -->
+    <h2 class="panel-title">Voices</h2>
+    <span class="panel-hint">それぞれの声があなた自身の独立したエコーとなります</span>
+    <button class="btn" id="add-voice">
+        <svg><use href="#icon-plus"/></svg>
+        ボイスを追加
+    </button>
+
+<!-- ... マスターパネル ... -->
+    <h2 class="panel-title">Master</h2>
+    <span class="panel-hint">聴こえる音すべてをコントロールします</span>
+    <button class="btn btn-danger" id="panic-btn">
+        <svg><use href="#icon-mute"/></svg>
+        すべてミュート
+    </button>
+
+<!-- ... フッター ... -->
+  <footer>
+    Roundは無料かつオープンソース（MITライセンス）です。音声は記録、保存、送信されません。<br />
+    すべてブラウザタブ内でリアルタイムに動作します。
+    各ボイスのディレイと音量設定はこのデバイスに保存されるため、
+    毎回設定し直す必要はありません。
+  </footer>
