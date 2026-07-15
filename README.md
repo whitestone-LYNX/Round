@@ -5,3 +5,5 @@ Here's Round — a single-file, dependency-free HTML app. It's a real-time delay
 This project took time to make, please consider showing it to your friends and even family! If you find any bugs/issues you can just talk to me!
 
 Created on 07/15/26 | 11:42 PM EST UTC +2
+
+Translated into German, Russian, French, Chinese, Spanish and Japanese
