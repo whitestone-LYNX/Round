@@ -1,0 +1,1389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Round — play a canon against yourself</title>
+<!--
+  Round — a self-duet delay looper
+  -----------------------------------
+  Point a microphone at an acoustic instrument (violin, voice, anything),
+  and Round plays your live sound back through one or more independent
+  delay lines, so you can play against your own past self — the way a
+  canon (a "round") is meant to be performed with several voices.
+
+  This is a single, dependency-free HTML file built on the Web Audio API.
+  No audio is ever recorded to disk or sent anywhere; everything happens
+  live, in memory, in your browser tab.
+
+  Author: (add your name here)
+  License: MIT — see the LICENSE block at the bottom of this file.
+  Repo:    (add your GitHub link here, e.g. github.com/whitestone-LYNX/round)
+
+  HOW TO USE
+  1. Wear headphones. This is not optional — see the on-page warning.
+  2. Click "Enable microphone" and allow access.
+  3. In the Tempo panel, type the piece's BPM and pick its time
+     signature (or tap the beat with the tap-tempo button instead of
+     typing a number).
+  4. Set each voice in bars, not seconds — e.g. "2 bars" for an entry
+     every two measures. Round converts that to an exact delay for you,
+     so there's no guessing at seconds.
+  5. Play the piece through once alone. When the first voice starts
+     echoing you back, start playing the next entrance against it,
+     just like a second singer joining a round.
+
+  BROWSER SUPPORT
+  Needs a browser with the Web Audio API and getUserMedia — any recent
+  Chrome, Firefox, Edge, or Safari. Must be served over HTTPS, or opened
+  from localhost (browsers block microphone access on plain http://).
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+  rel="stylesheet"
+/>
+<style>
+  :root {
+    --bg: #101d19;
+    --bg-deep: #0b1512;
+    --panel: #182922;
+    --panel-raised: #1f342b;
+    --line: rgba(231, 225, 204, 0.12);
+    --line-bright: rgba(231, 225, 204, 0.22);
+    --ink: #e9e2ca;
+    --ink-dim: #93a89c;
+    --ink-faint: #5f7268;
+    --brass: #c9a227;
+    --brass-bright: #e8c65e;
+    --copper: #b5651d;
+    --danger: #c15a4c;
+    --danger-bright: #e07a6b;
+    --font-display: "Cormorant Garamond", Georgia, serif;
+    --font-body: "Inter", -apple-system, sans-serif;
+    --font-mono: "IBM Plex Mono", "Courier New", monospace;
+    --radius: 3px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+  }
+
+  body {
+    font-family: var(--font-body);
+    color: var(--ink);
+    min-height: 100vh;
+    background:
+      radial-gradient(ellipse 900px 500px at 50% -10%, rgba(201, 162, 39, 0.10), transparent 60%),
+      var(--bg);
+  }
+
+  ::selection { background: var(--brass); color: var(--bg-deep); }
+
+  :focus-visible {
+    outline: 2px solid var(--brass-bright);
+    outline-offset: 2px;
+  }
+
+  .app {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 28px 20px 60px;
+  }
+
+  /* ---------- Header ---------- */
+  header {
+    text-align: center;
+    padding: 18px 0 8px;
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--brass);
+    margin: 0 0 10px;
+  }
+
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: clamp(38px, 7vw, 58px);
+    line-height: 1;
+    margin: 0;
+    letter-spacing: 0.01em;
+  }
+
+  h1 em {
+    font-style: italic;
+    color: var(--brass-bright);
+  }
+
+  .tagline {
+    font-size: 15px;
+    color: var(--ink-dim);
+    max-width: 480px;
+    margin: 14px auto 0;
+    line-height: 1.55;
+  }
+
+  /* ---------- Headphone warning ---------- */
+  .warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    background: linear-gradient(180deg, rgba(181, 101, 29, 0.16), rgba(181, 101, 29, 0.08));
+    border: 1px solid rgba(181, 101, 29, 0.4);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin: 24px 0;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--ink);
+  }
+  .warning svg { flex: none; width: 20px; height: 20px; color: var(--copper); margin-top: 1px; }
+  .warning strong { color: var(--brass-bright); }
+  .warning button {
+    margin-left: auto;
+    flex: none;
+    background: none;
+    border: none;
+    color: var(--ink-dim);
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 2px 4px;
+  }
+  .warning button:hover { color: var(--ink); }
+  .warning.hidden { display: none; }
+
+  /* ---------- Wheel section ---------- */
+  .wheel-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 0 8px;
+  }
+
+  .wheel-wrap {
+    position: relative;
+    width: min(320px, 78vw);
+    aspect-ratio: 1;
+  }
+
+  .wheel-glow {
+    position: absolute;
+    inset: -20%;
+    background: radial-gradient(circle, rgba(201, 162, 39, 0.14), transparent 70%);
+    pointer-events: none;
+  }
+
+  #wheel-svg { width: 100%; height: 100%; position: relative; }
+
+  .wheel-center-label {
+    font-family: var(--font-mono);
+    fill: var(--ink-dim);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+  }
+  .wheel-center-value {
+    font-family: var(--font-display);
+    fill: var(--ink);
+    font-size: 26px;
+    font-weight: 600;
+  }
+
+  .transport {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 18px;
+  }
+
+  .status-text {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink-dim);
+    letter-spacing: 0.03em;
+    min-width: 180px;
+    text-align: center;
+  }
+  .status-text.live { color: var(--brass-bright); }
+  .status-text.error { color: var(--danger-bright); }
+
+  .mic-canvas-wrap {
+    width: min(420px, 88vw);
+    height: 46px;
+    margin-top: 14px;
+    border-radius: var(--radius);
+    border: 1px solid var(--line);
+    background: var(--bg-deep);
+    overflow: hidden;
+  }
+
+  /* ---------- Buttons ---------- */
+  button {
+    font-family: var(--font-body);
+    cursor: pointer;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: var(--radius);
+    padding: 11px 22px;
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    border: 1px solid var(--line-bright);
+    background: var(--panel-raised);
+    color: var(--ink);
+    transition: border-color 0.15s ease, transform 0.05s ease, background 0.15s ease;
+  }
+  .btn:hover { border-color: var(--brass); }
+  .btn:active { transform: translateY(1px); }
+  .btn svg { width: 15px; height: 15px; }
+
+  .btn-primary {
+    background: linear-gradient(180deg, var(--brass-bright), var(--brass));
+    color: #241a02;
+    border-color: var(--brass);
+  }
+  .btn-primary:hover { filter: brightness(1.06); }
+
+  .btn-danger { border-color: rgba(193, 90, 76, 0.5); }
+  .btn-danger:hover { border-color: var(--danger-bright); }
+
+  .btn-ghost {
+    background: none;
+    border-color: transparent;
+    color: var(--ink-dim);
+    padding: 8px 10px;
+  }
+  .btn-ghost:hover { color: var(--ink); border-color: var(--line); }
+
+  .btn-icon {
+    padding: 8px;
+    border-radius: var(--radius);
+  }
+
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    filter: none;
+  }
+
+  /* ---------- Panels ---------- */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 22px;
+    margin-top: 22px;
+  }
+
+  .panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .panel-title {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .panel-hint {
+    font-size: 12.5px;
+    color: var(--ink-faint);
+  }
+
+  /* ---------- Voice rows ---------- */
+  .voice {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel-raised);
+    padding: 16px 18px;
+    margin-bottom: 12px;
+  }
+  .voice:last-of-type { margin-bottom: 0; }
+
+  .voice-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .voice-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex: none;
+    box-shadow: 0 0 8px 1px currentColor;
+  }
+
+  .voice-name {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    flex: 1;
+  }
+
+  .voice-controls {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px 20px;
+  }
+
+  .control-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .control-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    width: 54px;
+    flex: none;
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: 1;
+    height: 3px;
+    background: var(--line-bright);
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: var(--brass-bright);
+    border: 2px solid var(--bg-deep);
+    cursor: pointer;
+    margin-top: -6px;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--brass-bright);
+    border: 2px solid var(--bg-deep);
+    cursor: pointer;
+  }
+  input[type="range"]::-moz-range-track {
+    height: 3px;
+    background: var(--line-bright);
+    border-radius: 2px;
+  }
+
+  .num-readout {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--ink);
+    width: 52px;
+    text-align: right;
+    flex: none;
+  }
+
+  /* ---------- Number inputs (bars, BPM) ---------- */
+  input[type="number"] {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ink);
+    background: var(--bg-deep);
+    border: 1px solid var(--line-bright);
+    border-radius: var(--radius);
+    padding: 6px 8px;
+    text-align: center;
+  }
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] { -moz-appearance: textfield; }
+
+  .stepper-btn {
+    width: 26px;
+    height: 26px;
+    flex: none;
+    border-radius: var(--radius);
+    border: 1px solid var(--line-bright);
+    background: var(--bg-deep);
+    color: var(--ink-dim);
+    font-family: var(--font-mono);
+    font-size: 15px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .stepper-btn:hover { border-color: var(--brass); color: var(--ink); }
+
+  .bars-input { width: 54px; }
+  .bars-seconds-readout { width: 60px; }
+
+  /* ---------- Tempo panel ---------- */
+  .tempo-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .tempo-body .control-row { gap: 10px; }
+  #bpm-input { width: 70px; }
+  .meter-slash {
+    font-family: var(--font-mono);
+    color: var(--ink-faint);
+  }
+  select#timesig-num, select#timesig-den {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ink);
+    background: var(--bg-deep);
+    border: 1px solid var(--line-bright);
+    border-radius: var(--radius);
+    padding: 6px 8px;
+  }
+  .meter-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-left: 64px;
+  }
+  .preset-btn {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: var(--radius);
+    border: 1px solid var(--line-bright);
+    background: var(--bg-deep);
+    color: var(--ink-dim);
+  }
+  .preset-btn:hover { color: var(--ink); border-color: var(--brass); }
+  .preset-btn.active {
+    border-color: var(--brass);
+    color: var(--brass-bright);
+    background: rgba(201, 162, 39, 0.1);
+  }
+  .tempo-hint {
+    font-size: 12px;
+    color: var(--ink-faint);
+    padding-left: 64px;
+  }
+
+  .voice-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    grid-row: 1 / 3;
+    grid-column: 2;
+  }
+
+  .toggle {
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius);
+    border: 1px solid var(--line-bright);
+    background: transparent;
+    color: var(--ink-dim);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .toggle svg { width: 15px; height: 15px; }
+  .toggle:hover { border-color: var(--brass); color: var(--ink); }
+  .toggle.active {
+    background: rgba(193, 90, 76, 0.18);
+    border-color: var(--danger);
+    color: var(--danger-bright);
+  }
+
+  .add-voice-row {
+    margin-top: 14px;
+    display: flex;
+    justify-content: center;
+  }
+
+  /* ---------- Mic panel ---------- */
+  .mic-panel-body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 18px;
+  }
+
+  .master-volume {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 220px;
+  }
+  .master-volume .control-label { width: auto; }
+
+  /* ---------- Footer ---------- */
+  footer {
+    margin-top: 36px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--ink-faint);
+    line-height: 1.7;
+  }
+  footer a { color: var(--brass); text-decoration: none; border-bottom: 1px dotted var(--brass); }
+  footer a:hover { color: var(--brass-bright); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+
+  @media (max-width: 560px) {
+    .voice-controls { grid-template-columns: 1fr; }
+    .voice-actions { grid-row: auto; grid-column: auto; justify-content: flex-end; }
+    .control-label { width: 48px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- icon defs, reused via <use> -->
+  <svg width="0" height="0" style="position:absolute">
+    <defs>
+      <g id="icon-headphones" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 13v-1a8 8 0 0 1 16 0v1"/>
+        <rect x="2.5" y="13" width="4" height="6" rx="1.3"/>
+        <rect x="17.5" y="13" width="4" height="6" rx="1.3"/>
+      </g>
+      <g id="icon-mic" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="2" width="6" height="12" rx="3"/>
+        <path d="M5 11a7 7 0 0 0 14 0"/>
+        <path d="M12 18v3M9 21h6"/>
+      </g>
+      <g id="icon-stop" fill="currentColor">
+        <rect x="6" y="6" width="12" height="12" rx="1.5"/>
+      </g>
+      <g id="icon-plus" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <path d="M12 5v14M5 12h14"/>
+      </g>
+      <g id="icon-trash" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m2 0-.8 12.1a2 2 0 0 1-2 1.9H9.8a2 2 0 0 1-2-1.9L7 7"/>
+      </g>
+      <g id="icon-mute" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 9v6h4l5 4V5L8 9H4z"/>
+        <path d="M17 8l4 8M21 8l-4 8"/>
+      </g>
+      <g id="icon-tap" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="8"/>
+        <path d="M12 12l4-4" />
+        <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/>
+      </g>
+    </defs>
+  </svg>
+
+  <header>
+    <p class="eyebrow">a delay looper for solo canons</p>
+    <h1>R<em>ound</em></h1>
+    <p class="tagline">
+      Play your part once. Round hands it back to you, delayed, so the
+      next entrance has someone to play against — you, a phrase ago.
+    </p>
+  </header>
+
+  <div class="warning" id="warning" role="note">
+    <svg><use href="#icon-headphones"/></svg>
+    <div>
+      <strong>Wear headphones before you turn this on.</strong>
+      Round sends your delayed playing to your speakers in real time. If a
+      speaker plays it back into an open microphone, the sound loops on
+      itself and builds into a screech. Headphones keep the loop out of
+      the mic entirely.
+    </div>
+    <button id="warning-dismiss" aria-label="Dismiss warning">×</button>
+  </div>
+
+  <section class="wheel-section">
+    <div class="wheel-wrap">
+      <div class="wheel-glow"></div>
+      <svg id="wheel-svg" viewBox="0 0 300 300"></svg>
+    </div>
+
+    <div class="transport">
+      <button class="btn btn-primary" id="mic-toggle">
+        <svg><use href="#icon-mic"/></svg>
+        <span id="mic-toggle-label">Enable microphone</span>
+      </button>
+      <span class="status-text" id="status-text">Microphone off</span>
+    </div>
+
+    <div class="mic-canvas-wrap">
+      <canvas id="mic-canvas"></canvas>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2 class="panel-title">Tempo</h2>
+      <span class="panel-hint">set this once — every voice locks to whole bars</span>
+    </div>
+    <div class="tempo-body">
+      <div class="control-row">
+        <span class="control-label">BPM</span>
+        <input type="number" id="bpm-input" min="20" max="300" step="1" value="90" />
+        <button class="btn btn-ghost btn-icon" id="tap-bpm" title="Tap along with the beat to set the tempo">
+          <svg><use href="#icon-tap"/></svg>
+        </button>
+        <span class="status-text" id="tap-bpm-status" style="min-width:0"></span>
+      </div>
+      <div class="control-row">
+        <span class="control-label">Meter</span>
+        <select id="timesig-num" aria-label="Beats per bar"></select>
+        <span class="meter-slash">/</span>
+        <select id="timesig-den" aria-label="Beat unit"></select>
+      </div>
+      <div class="meter-presets" id="meter-presets">
+        <button class="preset-btn" data-num="4" data-den="4">4/4</button>
+        <button class="preset-btn" data-num="3" data-den="4">3/4</button>
+        <button class="preset-btn" data-num="2" data-den="4">2/4</button>
+        <button class="preset-btn" data-num="6" data-den="8">6/8</button>
+        <button class="preset-btn" data-num="9" data-den="8">9/8</button>
+        <button class="preset-btn" data-num="12" data-den="8">12/8</button>
+      </div>
+      <p class="tempo-hint">
+        Each voice below is set in bars, not seconds — type the BPM and
+        meter of the piece here and every voice's delay is computed for you.
+      </p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2 class="panel-title">Voices</h2>
+      <span class="panel-hint">each one is an independent echo of you</span>
+    </div>
+    <div id="voice-list"></div>
+    <div class="add-voice-row">
+      <button class="btn" id="add-voice">
+        <svg><use href="#icon-plus"/></svg>
+        Add a voice
+      </button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2 class="panel-title">Master</h2>
+      <span class="panel-hint">controls everything you hear back</span>
+    </div>
+    <div class="mic-panel-body">
+      <div class="master-volume">
+        <span class="control-label">Volume</span>
+        <input type="range" id="master-volume" min="0" max="100" value="80" />
+        <span class="num-readout" id="master-volume-readout">80%</span>
+      </div>
+      <button class="btn btn-danger" id="panic-btn">
+        <svg><use href="#icon-mute"/></svg>
+        Mute all
+      </button>
+    </div>
+  </section>
+
+  <footer>
+    Round is free and open-source (MIT licensed). No audio is recorded,
+    saved, or sent anywhere — everything runs live in this browser tab.<br />
+    Delay and volume settings for your voices are remembered on this
+    device so you don't have to re-tune them every session.
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ============================================================
+     STATE
+     ============================================================ */
+  const state = {
+    voices: [],
+    bpm: 90,
+    timeSigNum: 4,
+    timeSigDen: 4,
+    masterVolume: 80,
+    micOn: false,
+    warningDismissed: false,
+  };
+
+  let audioCtx = null;
+  let micStream = null;
+  let sourceNode = null;
+  let micAnalyser = null;
+  let masterGain = null;
+  const voiceNodes = new Map(); // id -> { delayNode, gainNode, analyser }
+  let tapBpmTimestamps = []; // rolling list of tap times (ms) for the global tap-tempo button
+  let nextVoiceId = 1;
+
+  const VOICE_COLORS = ["#e8c65e", "#b5651d", "#7fa88f", "#c15a4c", "#8f8fd1", "#5fb0c9"];
+  const STORAGE_KEY = "round:settings:v2";
+  const MAX_DELAY = 60;
+
+  // Seconds per bar, given the current BPM and time signature. BPM counts
+  // beats where one beat = one note of the meter's bottom number (so in
+  // 6/8 a "beat" is an eighth note, same as any standard metronome).
+  function secondsPerBar() {
+    return state.timeSigNum * (60 / state.bpm);
+  }
+  function computeDelay(bars) {
+    return clamp(bars * secondsPerBar(), 0.05, MAX_DELAY);
+  }
+
+  /* ============================================================
+     STORAGE — works inside the Claude artifact sandbox (window.storage)
+     and, when this file is hosted on its own, falls back to
+     localStorage so the standalone open-source file still remembers
+     your settings. Never throws if neither is available.
+     ============================================================ */
+  async function storageGet(key) {
+    if (window.storage && typeof window.storage.get === "function") {
+      try {
+        const res = await window.storage.get(key, false);
+        return res ? res.value : null;
+      } catch (e) {
+        return null;
+      }
+    }
+    try {
+      return window.localStorage ? window.localStorage.getItem(key) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function storageSet(key, value) {
+    if (window.storage && typeof window.storage.set === "function") {
+      try {
+        await window.storage.set(key, value, false);
+      } catch (e) {
+        /* ignore */
+      }
+      return;
+    }
+    try {
+      if (window.localStorage) window.localStorage.setItem(key, value);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  let saveTimer = null;
+  function scheduleSave() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      storageSet(
+        STORAGE_KEY,
+        JSON.stringify({
+          voices: state.voices,
+          bpm: state.bpm,
+          timeSigNum: state.timeSigNum,
+          timeSigDen: state.timeSigDen,
+          masterVolume: state.masterVolume,
+          warningDismissed: state.warningDismissed,
+        })
+      );
+    }, 400);
+  }
+
+  async function loadSettings() {
+    const raw = await storageGet(STORAGE_KEY);
+    if (raw) {
+      try {
+        const data = JSON.parse(raw);
+        if (Array.isArray(data.voices) && data.voices.length) {
+          state.voices = data.voices;
+          nextVoiceId = Math.max(...data.voices.map((v) => v.id)) + 1;
+        }
+        if (typeof data.bpm === "number") state.bpm = clamp(data.bpm, 20, 300);
+        if (typeof data.timeSigNum === "number") state.timeSigNum = clamp(Math.round(data.timeSigNum), 1, 16);
+        if (typeof data.timeSigDen === "number") state.timeSigDen = data.timeSigDen;
+        if (typeof data.masterVolume === "number") state.masterVolume = data.masterVolume;
+        if (typeof data.warningDismissed === "boolean") state.warningDismissed = data.warningDismissed;
+      } catch (e) {
+        /* corrupt/old data, ignore and fall through to defaults */
+      }
+    }
+    if (!state.voices.length) {
+      state.voices = [
+        { id: nextVoiceId++, bars: 2, volume: 80, muted: false },
+        { id: nextVoiceId++, bars: 4, volume: 65, muted: false },
+      ];
+    }
+    // Backfill bars for voices saved by an older version of Round that
+    // only stored a raw delay in seconds, and (re)compute every voice's
+    // delay from bars + the current tempo so they always stay in sync.
+    state.voices.forEach((v) => {
+      if (typeof v.bars !== "number") {
+        v.bars = v.delay ? Math.max(0.25, Math.round((v.delay / secondsPerBar()) * 4) / 4) : 2;
+      }
+      v.delay = computeDelay(v.bars);
+    });
+  }
+
+  /* ============================================================
+     DOM refs
+     ============================================================ */
+  const $ = (id) => document.getElementById(id);
+  const dom = {
+    warning: $("warning"),
+    warningDismiss: $("warning-dismiss"),
+    wheelSvg: $("wheel-svg"),
+    micToggle: $("mic-toggle"),
+    micToggleLabel: $("mic-toggle-label"),
+    statusText: $("status-text"),
+    micCanvas: $("mic-canvas"),
+    voiceList: $("voice-list"),
+    addVoice: $("add-voice"),
+    masterVolume: $("master-volume"),
+    masterVolumeReadout: $("master-volume-readout"),
+    panicBtn: $("panic-btn"),
+    bpmInput: $("bpm-input"),
+    tapBpm: $("tap-bpm"),
+    tapBpmStatus: $("tap-bpm-status"),
+    timesigNum: $("timesig-num"),
+    timesigDen: $("timesig-den"),
+    meterPresets: $("meter-presets"),
+  };
+
+  const micCtx2d = dom.micCanvas.getContext("2d");
+  const timeArray = new Uint8Array(1024);
+  const voiceLevelArray = new Uint8Array(256);
+
+  /* ============================================================
+     AUDIO GRAPH
+     ============================================================ */
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  async function enableMic() {
+    dom.micToggle.disabled = true;
+    setStatus("Requesting microphone…");
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+    } catch (err) {
+      setStatus("Microphone access denied", true);
+      dom.micToggle.disabled = false;
+      return;
+    }
+
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    sourceNode = audioCtx.createMediaStreamSource(micStream);
+
+    micAnalyser = audioCtx.createAnalyser();
+    micAnalyser.fftSize = 2048;
+    sourceNode.connect(micAnalyser);
+
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = state.masterVolume / 100;
+    masterGain.connect(audioCtx.destination);
+
+    syncVoiceNodes();
+
+    state.micOn = true;
+    dom.micToggle.disabled = false;
+    dom.micToggleLabel.textContent = "Stop microphone";
+    dom.micToggle.classList.remove("btn-primary");
+    dom.micToggle.classList.add("btn-danger");
+    setStatus("Listening — play something", false, true);
+  }
+
+  function disableMic() {
+    if (micStream) micStream.getTracks().forEach((t) => t.stop());
+    if (audioCtx) audioCtx.close();
+    audioCtx = null;
+    sourceNode = null;
+    micAnalyser = null;
+    masterGain = null;
+    micStream = null;
+    voiceNodes.clear();
+
+    state.micOn = false;
+    dom.micToggleLabel.textContent = "Enable microphone";
+    dom.micToggle.classList.add("btn-primary");
+    dom.micToggle.classList.remove("btn-danger");
+    setStatus("Microphone off");
+    micCtx2d.clearRect(0, 0, dom.micCanvas.width, dom.micCanvas.height);
+    renderWheel();
+  }
+
+  function setStatus(text, isError, isLive) {
+    dom.statusText.textContent = text;
+    dom.statusText.classList.toggle("error", !!isError);
+    dom.statusText.classList.toggle("live", !!isLive);
+  }
+
+  // Creates/destroys per-voice audio nodes to match state.voices, and
+  // smoothly ramps live parameter changes so nothing clicks or pops.
+  function syncVoiceNodes() {
+    if (!audioCtx || !state.micOn) return;
+
+    for (const [id, nodes] of voiceNodes) {
+      if (!state.voices.find((v) => v.id === id)) {
+        nodes.delayNode.disconnect();
+        nodes.gainNode.disconnect();
+        nodes.analyser.disconnect();
+        voiceNodes.delete(id);
+      }
+    }
+
+    state.voices.forEach((v) => {
+      if (!voiceNodes.has(v.id)) {
+        const delayNode = audioCtx.createDelay(MAX_DELAY + 1);
+        delayNode.delayTime.value = v.delay;
+
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.value = v.muted ? 0 : v.volume / 100;
+
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+
+        sourceNode.connect(delayNode);
+        delayNode.connect(gainNode);
+        gainNode.connect(analyser);
+        analyser.connect(masterGain);
+
+        voiceNodes.set(v.id, { delayNode, gainNode, analyser });
+      } else {
+        const nodes = voiceNodes.get(v.id);
+        nodes.delayNode.delayTime.setTargetAtTime(v.delay, audioCtx.currentTime, 0.06);
+        nodes.gainNode.gain.setTargetAtTime(v.muted ? 0 : v.volume / 100, audioCtx.currentTime, 0.03);
+      }
+    });
+  }
+
+  /* ============================================================
+     VOICE MANAGEMENT
+     ============================================================ */
+  function addVoice() {
+    const last = state.voices[state.voices.length - 1];
+    const bars = clamp((last ? last.bars : 0) + 2, 0.25, 32);
+    state.voices.push({ id: nextVoiceId++, bars, delay: computeDelay(bars), volume: 70, muted: false });
+    syncVoiceNodes();
+    renderVoiceList();
+    renderWheel();
+    scheduleSave();
+  }
+
+  function removeVoice(id) {
+    if (state.voices.length <= 1) return;
+    state.voices = state.voices.filter((v) => v.id !== id);
+    syncVoiceNodes();
+    renderVoiceList();
+    renderWheel();
+    scheduleSave();
+  }
+
+  function updateVoice(id, patch) {
+    const v = state.voices.find((v) => v.id === id);
+    if (!v) return;
+    Object.assign(v, patch);
+    syncVoiceNodes();
+    scheduleSave();
+  }
+
+  function voiceColor(index) { return VOICE_COLORS[index % VOICE_COLORS.length]; }
+
+  /* ============================================================
+     TEMPO & METER — recomputes every voice's delay whenever the BPM
+     or time signature changes, so voices always stay locked to whole
+     bars instead of drifting seconds you'd have to re-guess.
+     ============================================================ */
+  function recalcAllDelays() {
+    state.voices.forEach((v) => { v.delay = computeDelay(v.bars); });
+    syncVoiceNodes();
+    renderVoiceList();
+    renderWheel();
+    scheduleSave();
+  }
+
+  function populateTimeSigSelects() {
+    dom.timesigNum.innerHTML = "";
+    for (let i = 1; i <= 16; i++) {
+      const o = document.createElement("option");
+      o.value = i;
+      o.textContent = i;
+      dom.timesigNum.appendChild(o);
+    }
+    dom.timesigDen.innerHTML = "";
+    [1, 2, 4, 8, 16, 32].forEach((d) => {
+      const o = document.createElement("option");
+      o.value = d;
+      o.textContent = d;
+      dom.timesigDen.appendChild(o);
+    });
+  }
+
+  function syncMeterUI() {
+    dom.timesigNum.value = state.timeSigNum;
+    dom.timesigDen.value = state.timeSigDen;
+    Array.from(dom.meterPresets.children).forEach((btn) => {
+      const match = Number(btn.dataset.num) === state.timeSigNum && Number(btn.dataset.den) === state.timeSigDen;
+      btn.classList.toggle("active", match);
+    });
+  }
+
+  function setMeter(num, den) {
+    state.timeSigNum = clamp(Math.round(num), 1, 16);
+    state.timeSigDen = den;
+    syncMeterUI();
+    recalcAllDelays();
+  }
+
+  function tapBpm() {
+    const now = performance.now();
+    tapBpmTimestamps = tapBpmTimestamps.filter((t) => now - t < 2500);
+    tapBpmTimestamps.push(now);
+    if (tapBpmTimestamps.length > 8) tapBpmTimestamps.shift();
+
+    if (tapBpmTimestamps.length < 2) {
+      dom.tapBpmStatus.textContent = "tap again…";
+      return;
+    }
+    const intervals = [];
+    for (let i = 1; i < tapBpmTimestamps.length; i++) {
+      intervals.push(tapBpmTimestamps[i] - tapBpmTimestamps[i - 1]);
+    }
+    const avgMs = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    const bpm = clamp(Math.round(60000 / avgMs), 20, 300);
+    state.bpm = bpm;
+    dom.bpmInput.value = bpm;
+    dom.tapBpmStatus.textContent = tapBpmTimestamps.length < 4 ? "keep tapping…" : "";
+    recalcAllDelays();
+  }
+
+  /* ============================================================
+     RENDER — voice list
+     ============================================================ */
+  function renderVoiceList() {
+    dom.voiceList.innerHTML = "";
+    state.voices.forEach((v, i) => {
+      const color = voiceColor(i);
+      const row = document.createElement("div");
+      row.className = "voice";
+      row.innerHTML = `
+        <div class="voice-top">
+          <span class="voice-swatch" style="background:${color}; color:${color}"></span>
+          <span class="voice-name">Voice ${i + 1}</span>
+        </div>
+        <div class="voice-controls">
+          <div>
+            <div class="control-row">
+              <span class="control-label">Bars</span>
+              <button class="stepper-btn bars-minus" aria-label="Decrease bars" type="button">−</button>
+              <input type="number" class="bars-input" min="0.25" max="32" step="0.25" value="${v.bars}" />
+              <button class="stepper-btn bars-plus" aria-label="Increase bars" type="button">+</button>
+              <span class="num-readout bars-seconds-readout">${v.delay.toFixed(2)}s</span>
+            </div>
+            <div class="control-row" style="margin-top:10px">
+              <span class="control-label">Volume</span>
+              <input type="range" class="volume-slider" min="0" max="100" step="1" value="${v.volume}" />
+              <span class="num-readout volume-readout">${v.volume}%</span>
+            </div>
+          </div>
+          <div class="voice-actions">
+            <button class="toggle mute-btn ${v.muted ? "active" : ""}" title="Mute this voice">
+              <svg><use href="#icon-mute"/></svg>
+            </button>
+            <button class="toggle remove-btn" title="Remove this voice" ${state.voices.length <= 1 ? "disabled" : ""}>
+              <svg><use href="#icon-trash"/></svg>
+            </button>
+          </div>
+        </div>
+      `;
+
+      const barsInput = row.querySelector(".bars-input");
+      const secReadout = row.querySelector(".bars-seconds-readout");
+      const applyBars = (rawBars) => {
+        const bars = clamp(Math.round(rawBars * 4) / 4, 0.25, 32);
+        barsInput.value = bars;
+        const delay = computeDelay(bars);
+        secReadout.textContent = delay.toFixed(2) + "s";
+        updateVoice(v.id, { bars, delay });
+        renderWheel();
+      };
+      barsInput.addEventListener("change", () => applyBars(parseFloat(barsInput.value) || v.bars));
+      row.querySelector(".bars-minus").addEventListener("click", () => applyBars((parseFloat(barsInput.value) || v.bars) - 1));
+      row.querySelector(".bars-plus").addEventListener("click", () => applyBars((parseFloat(barsInput.value) || v.bars) + 1));
+
+      const volumeSlider = row.querySelector(".volume-slider");
+      const volumeReadout = row.querySelector(".volume-readout");
+      volumeSlider.addEventListener("input", () => {
+        const val = parseInt(volumeSlider.value, 10);
+        volumeReadout.textContent = val + "%";
+        updateVoice(v.id, { volume: val });
+      });
+
+      const muteBtn = row.querySelector(".mute-btn");
+      muteBtn.addEventListener("click", () => {
+        const nowMuted = !v.muted;
+        updateVoice(v.id, { muted: nowMuted });
+        muteBtn.classList.toggle("active", nowMuted);
+      });
+
+      row.querySelector(".remove-btn").addEventListener("click", () => removeVoice(v.id));
+
+      dom.voiceList.appendChild(row);
+    });
+  }
+
+  /* ============================================================
+     RENDER — the wheel
+     One full turn of the hand represents the length of the longest
+     active voice's delay. Each voice gets a marker at the angle
+     matching its own delay, so you can see at a glance how the
+     voices are staggered around the round — and the marker glows
+     with that voice's live output level.
+     ============================================================ */
+  const NS = "http://www.w3.org/2000/svg";
+  function svgEl(tag, attrs) {
+    const el = document.createElementNS(NS, tag);
+    for (const k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+  }
+
+  function getCycleLength() {
+    if (!state.voices.length) return 1;
+    return Math.max(1, ...state.voices.map((v) => v.delay));
+  }
+
+  function renderWheel() {
+    const svg = dom.wheelSvg;
+    svg.innerHTML = "";
+    const cx = 150, cy = 150, rOuter = 128, rTicks = 118, rHand = 104;
+
+    // outer ring
+    svg.appendChild(svgEl("circle", { cx, cy, r: rOuter, fill: "none", stroke: "var(--line-bright)", "stroke-width": 1.5 }));
+    svg.appendChild(svgEl("circle", { cx, cy, r: 74, fill: "var(--bg-deep)", stroke: "var(--line)", "stroke-width": 1 }));
+
+    // tick marks, 16 around the circle
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2 - Math.PI / 2;
+      const inner = i % 4 === 0 ? rTicks - 10 : rTicks - 5;
+      const x1 = cx + Math.cos(a) * inner, y1 = cy + Math.sin(a) * inner;
+      const x2 = cx + Math.cos(a) * rTicks, y2 = cy + Math.sin(a) * rTicks;
+      svg.appendChild(svgEl("line", { x1, y1, x2, y2, stroke: "var(--line-bright)", "stroke-width": i % 4 === 0 ? 1.5 : 1 }));
+    }
+
+    const cycle = getCycleLength();
+
+    // voice markers
+    state.voices.forEach((v, i) => {
+      const color = voiceColor(i);
+      const angle = (v.delay / cycle) * Math.PI * 2 - Math.PI / 2;
+      const mx = cx + Math.cos(angle) * rTicks;
+      const my = cy + Math.sin(angle) * rTicks;
+      const marker = svgEl("circle", {
+        id: "marker-" + v.id,
+        cx: mx, cy: my, r: 5,
+        fill: color,
+        opacity: v.muted ? 0.25 : 0.6,
+      });
+      svg.appendChild(marker);
+    });
+
+    // rotating hand
+    const hand = svgEl("line", {
+      id: "wheel-hand",
+      x1: cx, y1: cy,
+      x2: cx, y2: cy - rHand,
+      stroke: "var(--brass-bright)",
+      "stroke-width": 2,
+      "stroke-linecap": "round",
+    });
+    hand.setAttribute("transform", `rotate(0 ${cx} ${cy})`);
+    svg.appendChild(hand);
+    svg.appendChild(svgEl("circle", { cx, cy, r: 3.5, fill: "var(--brass-bright)" }));
+
+    // center label
+    const label = svgEl("text", { x: cx, y: cy + 30, "text-anchor": "middle", class: "wheel-center-label" });
+    label.textContent = "ROUND LENGTH";
+    svg.appendChild(label);
+
+    const value = svgEl("text", { x: cx, y: cy + 8, "text-anchor": "middle", class: "wheel-center-value" });
+    value.textContent = cycle.toFixed(1) + "s";
+    svg.appendChild(value);
+  }
+
+  /* ============================================================
+     ANIMATION LOOP — wheel hand rotation + level meters
+     ============================================================ */
+  function drawMicMeter() {
+    const canvas = dom.micCanvas;
+    const w = (canvas.width = canvas.clientWidth * devicePixelRatio);
+    const h = (canvas.height = canvas.clientHeight * devicePixelRatio);
+    micCtx2d.clearRect(0, 0, w, h);
+
+    if (!micAnalyser) return;
+    micAnalyser.getByteTimeDomainData(timeArray);
+    micCtx2d.beginPath();
+    micCtx2d.lineWidth = 1.5 * devicePixelRatio;
+    micCtx2d.strokeStyle = "#c9a227";
+    const step = w / timeArray.length;
+    for (let i = 0; i < timeArray.length; i++) {
+      const y = (timeArray[i] / 255) * h;
+      const x = i * step;
+      if (i === 0) micCtx2d.moveTo(x, y);
+      else micCtx2d.lineTo(x, y);
+    }
+    micCtx2d.stroke();
+  }
+
+  function tick() {
+    if (audioCtx && state.micOn) {
+      const cycle = getCycleLength();
+      const t = audioCtx.currentTime % cycle;
+      const angleDeg = (t / cycle) * 360;
+      const hand = document.getElementById("wheel-hand");
+      if (hand) hand.setAttribute("transform", `rotate(${angleDeg} 150 150)`);
+
+      state.voices.forEach((v) => {
+        const nodes = voiceNodes.get(v.id);
+        const marker = document.getElementById("marker-" + v.id);
+        if (nodes && marker) {
+          nodes.analyser.getByteTimeDomainData(voiceLevelArray);
+          let peak = 0;
+          for (let i = 0; i < voiceLevelArray.length; i++) {
+            const d = Math.abs(voiceLevelArray[i] - 128);
+            if (d > peak) peak = d;
+          }
+          const level = Math.min(1, peak / 50);
+          marker.setAttribute("r", 5 + level * 7);
+          marker.setAttribute("opacity", v.muted ? 0.25 : 0.5 + level * 0.5);
+        }
+      });
+
+      drawMicMeter();
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  /* ============================================================
+     WIRE UP STATIC CONTROLS
+     ============================================================ */
+  dom.micToggle.addEventListener("click", () => {
+    if (state.micOn) disableMic();
+    else enableMic();
+  });
+
+  dom.addVoice.addEventListener("click", addVoice);
+
+  dom.masterVolume.addEventListener("input", () => {
+    const val = parseInt(dom.masterVolume.value, 10);
+    state.masterVolume = val;
+    dom.masterVolumeReadout.textContent = val + "%";
+    if (masterGain && audioCtx) {
+      masterGain.gain.setTargetAtTime(val / 100, audioCtx.currentTime, 0.03);
+    }
+    scheduleSave();
+  });
+
+  let panicked = false;
+  let volumeBeforePanic = 80;
+  dom.panicBtn.addEventListener("click", () => {
+    if (!masterGain || !audioCtx) return;
+    panicked = !panicked;
+    if (panicked) {
+      volumeBeforePanic = state.masterVolume;
+      masterGain.gain.setTargetAtTime(0, audioCtx.currentTime, 0.01);
+      dom.panicBtn.classList.add("active");
+    } else {
+      masterGain.gain.setTargetAtTime(volumeBeforePanic / 100, audioCtx.currentTime, 0.01);
+      dom.panicBtn.classList.remove("active");
+    }
+  });
+
+  dom.warningDismiss.addEventListener("click", () => {
+    state.warningDismissed = true;
+    dom.warning.classList.add("hidden");
+    scheduleSave();
+  });
+
+  dom.bpmInput.addEventListener("change", () => {
+    const val = clamp(parseFloat(dom.bpmInput.value) || state.bpm, 20, 300);
+    dom.bpmInput.value = val;
+    state.bpm = val;
+    recalcAllDelays();
+  });
+
+  dom.tapBpm.addEventListener("click", tapBpm);
+
+  dom.timesigNum.addEventListener("change", () => {
+    setMeter(parseInt(dom.timesigNum.value, 10), state.timeSigDen);
+  });
+  dom.timesigDen.addEventListener("change", () => {
+    setMeter(state.timeSigNum, parseInt(dom.timesigDen.value, 10));
+  });
+
+  Array.from(dom.meterPresets.children).forEach((btn) => {
+    btn.addEventListener("click", () => setMeter(Number(btn.dataset.num), Number(btn.dataset.den)));
+  });
+
+  /* ============================================================
+     INIT
+     ============================================================ */
+  (async function init() {
+    populateTimeSigSelects();
+    await loadSettings();
+    dom.masterVolume.value = state.masterVolume;
+    dom.masterVolumeReadout.textContent = state.masterVolume + "%";
+    dom.bpmInput.value = state.bpm;
+    syncMeterUI();
+    if (state.warningDismissed) dom.warning.classList.add("hidden");
+    renderVoiceList();
+    renderWheel();
+  })();
+})();
+</script>
+</body>
+</html>
+<!--
+MIT License
+
+Copyright (c) 2026 (add your name here)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+-->
